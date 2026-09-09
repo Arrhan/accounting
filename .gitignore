@@ -1,0 +1,13 @@
+# env — never commit secrets
+.env*
+!.env.example
+
+# local-only docs
+docs/
+
+# deps / build
+node_modules/
+.next/
+next-env.d.ts
+*.tsbuildinfo
+.vercel/
