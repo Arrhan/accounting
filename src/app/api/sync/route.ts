@@ -18,10 +18,19 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "not_configured" }, { status: 500 });
   }
 
+  // Optional ?window=N (days, 1-90) for the one-time 60-day backfill and
+  // catch-up after outages. The bridge caps ranges at 90 days.
+  const windowParam = Number(new URL(request.url).searchParams.get("window"));
+  const windowDays =
+    Number.isInteger(windowParam) && windowParam >= 1 && windowParam <= 90
+      ? windowParam
+      : 30;
+
   try {
     const result = await runSync({
       db,
       source: createSimpleFinSource(accessUrl),
+      windowDays,
     });
     return NextResponse.json(result);
   } catch (err) {
