@@ -10,7 +10,14 @@ const globalForDb = globalThis as unknown as {
 
 const client =
   globalForDb.pgClient ??
-  postgres(process.env.DATABASE_URL!, { prepare: false });
+  postgres(process.env.DATABASE_URL!, {
+    prepare: false,
+    // Vercel fluid compute: one warm instance serves concurrent invocations
+    // sharing this module-scope pool; close idle sockets before instance
+    // suspension kills them silently.
+    max: 5,
+    idle_timeout: 20,
+  });
 if (process.env.NODE_ENV !== "production") globalForDb.pgClient = client;
 
 export const db = drizzle(client, { schema });

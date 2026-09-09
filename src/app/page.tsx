@@ -1,6 +1,6 @@
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { accounts, transactions } from "@/db/schema";
+import { accounts, connections, transactions } from "@/db/schema";
 import { formatCents } from "@/lib/format";
 import {
   Table,
@@ -13,25 +13,66 @@ import {
 
 export const dynamic = "force-dynamic";
 
+// Daily cron cadence + Vercel Hobby's 59-minute firing window + slack.
+const STALE_MS = 36 * 60 * 60 * 1000;
+
+type Connection = typeof connections.$inferSelect;
+
+function syncHealth(conns: Connection[]) {
+  const errored = conns.filter((c) => c.status === "error");
+  const newestSync = conns.reduce<Date | null>(
+    (max, c) =>
+      c.lastSyncedAt && (!max || c.lastSyncedAt > max) ? c.lastSyncedAt : max,
+    null,
+  );
+  const stale =
+    conns.length > 0 &&
+    (!newestSync || Date.now() - newestSync.getTime() > STALE_MS);
+  return { errored, newestSync, stale };
+}
+
 export default async function Home() {
-  const rows = await db
-    .select({
-      id: transactions.id,
-      postedAt: transactions.postedAt,
-      accountName: accounts.name,
-      description: transactions.description,
-      payee: transactions.payee,
-      amountCents: transactions.amountCents,
-      currency: accounts.currency,
-    })
-    .from(transactions)
-    .innerJoin(accounts, eq(transactions.accountId, accounts.id))
-    .orderBy(desc(transactions.postedAt))
-    .limit(200);
+  const [conns, rows] = await Promise.all([
+    db.select().from(connections),
+    db
+      .select({
+        id: transactions.id,
+        postedAt: transactions.postedAt,
+        accountName: accounts.name,
+        description: transactions.description,
+        payee: transactions.payee,
+        amountCents: transactions.amountCents,
+        currency: accounts.currency,
+      })
+      .from(transactions)
+      .innerJoin(accounts, eq(transactions.accountId, accounts.id))
+      .orderBy(desc(transactions.postedAt))
+      .limit(200),
+  ]);
+
+  const { errored, newestSync, stale } = syncHealth(conns);
 
   return (
     <main className="mx-auto max-w-4xl p-8">
       <h1 className="mb-6 text-xl font-semibold">Transactions</h1>
+      {(errored.length > 0 || stale) && (
+        <div className="border-destructive/50 bg-destructive/10 text-destructive mb-4 rounded-lg border p-3 text-sm">
+          {errored.map((c) => (
+            <p key={c.id}>
+              {c.name}: sync error{c.lastError ? ` — ${c.lastError}` : ""}
+            </p>
+          ))}
+          {stale && (
+            <p>
+              Last sync:{" "}
+              {newestSync
+                ? `${newestSync.toISOString().slice(0, 16).replace("T", " ")} UTC`
+                : "never"}{" "}
+              — data may be out of date.
+            </p>
+          )}
+        </div>
+      )}
       {rows.length === 0 ? (
         <p className="text-muted-foreground text-sm">
           No transactions yet — run a sync.
