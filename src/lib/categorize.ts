@@ -27,14 +27,20 @@ const notManual = () =>
     ne(transactions.categorizedBy, "manual"),
   );
 
-/** Single source of truth for the review-queue predicate (page, nav, pipeline). */
+/**
+ * Single source of truth for the review-queue predicate (page, nav, pipeline).
+ * Needs attention = never categorized, OR machine-assigned Uncategorized. A
+ * manual "Uncategorized" is a settled human decision and drops out of the queue.
+ */
 export function reviewQueueWhere(uncategorizedId: number | null) {
-  return uncategorizedId === null
-    ? isNull(transactions.categoryId)
-    : or(
-        isNull(transactions.categoryId),
-        eq(transactions.categoryId, uncategorizedId),
-      );
+  if (uncategorizedId === null) return isNull(transactions.categoryId);
+  return or(
+    isNull(transactions.categoryId),
+    and(
+      eq(transactions.categoryId, uncategorizedId),
+      ne(transactions.categorizedBy, "manual"),
+    ),
+  );
 }
 
 type Candidate = {

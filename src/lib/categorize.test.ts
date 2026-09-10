@@ -271,6 +271,25 @@ describe("categorizeTransactions", () => {
     const result = await categorizeTransactions({ db, categorizer: null });
     expect(result.uncategorized).toBe(1);
   });
+
+  it("drops manually-Uncategorized rows from the queue but keeps machine ones", async () => {
+    // Human gave up on this one — a settled decision, should leave the queue.
+    await seedTxn({
+      description: "MYSTERY CHARGE",
+      normalizedMerchant: "MYSTERY CHARGE",
+      categoryId: catId["Uncategorized"],
+      categorizedBy: "manual",
+    });
+    // Machine wasn't sure — still needs a human, stays in the queue.
+    await seedTxn({
+      description: "ODD ONE",
+      normalizedMerchant: "ODD ONE",
+      categoryId: catId["Uncategorized"],
+      categorizedBy: "llm",
+    });
+    const result = await categorizeTransactions({ db, categorizer: null });
+    expect(result.uncategorized).toBe(1);
+  });
 });
 
 describe("applyMemoryToMerchant", () => {

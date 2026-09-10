@@ -292,7 +292,7 @@ describe("runSync", () => {
 
   it("has the seeded category taxonomy from migrations", async () => {
     const cats = await db.select().from(categories);
-    expect(cats).toHaveLength(14);
+    expect(cats).toHaveLength(15);
     const nonSpend = cats.filter((c) => !c.isSpend).map((c) => c.name);
     expect(nonSpend.sort()).toEqual(["Income", "Transfers"]);
   });
