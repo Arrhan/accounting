@@ -47,6 +47,7 @@ export default async function Home() {
         amountCents: transactions.amountCents,
         currency: accounts.currency,
         categoryId: transactions.categoryId,
+        isTransfer: transactions.isTransfer,
       })
       .from(transactions)
       .innerJoin(accounts, eq(transactions.accountId, accounts.id))
@@ -96,7 +97,7 @@ export default async function Home() {
           </TableHeader>
           <TableBody>
             {rows.map((row) => (
-              <TableRow key={row.id}>
+              <TableRow key={row.id} className={row.isTransfer ? "opacity-60" : ""}>
                 <TableCell className="whitespace-nowrap">
                   {row.postedAt.toISOString().slice(0, 10)}
                 </TableCell>
@@ -104,11 +105,20 @@ export default async function Home() {
                 <TableCell>{row.description}</TableCell>
                 <TableCell>{row.payee ?? ""}</TableCell>
                 <TableCell>
-                  <CategorySelect
-                    txnId={row.id}
-                    categories={cats}
-                    currentCategoryId={row.categoryId}
-                  />
+                  {row.isTransfer ? (
+                    <span
+                      className="text-muted-foreground text-xs"
+                      title="Inter-account transfer — excluded from spending totals"
+                    >
+                      ⇄ transfer
+                    </span>
+                  ) : (
+                    <CategorySelect
+                      txnId={row.id}
+                      categories={cats}
+                      currentCategoryId={row.categoryId}
+                    />
+                  )}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
                   {formatCents(row.amountCents, row.currency)}

@@ -7,6 +7,7 @@ import {
 import { createClaudeCategorizer } from "@/lib/sources/llm";
 import { createSimpleFinSource } from "@/lib/sources/simplefin";
 import { runSync } from "@/lib/sync";
+import { matchTransfers } from "@/lib/transfers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,7 +56,26 @@ export async function GET(request: Request) {
       categorizeError = "categorize_failed";
     }
 
-    return NextResponse.json({ ...result, categorization, categorizeError });
+    // Match inter-account transfers; a failure here must not fail the sync.
+    let transfers: Awaited<ReturnType<typeof matchTransfers>> | null = null;
+    let transfersError: string | undefined;
+    try {
+      transfers = await matchTransfers({ db });
+    } catch (err) {
+      console.error(
+        "Transfer matching failed:",
+        err instanceof Error ? err.message : "unknown error",
+      );
+      transfersError = "transfers_failed";
+    }
+
+    return NextResponse.json({
+      ...result,
+      categorization,
+      categorizeError,
+      transfers,
+      transfersError,
+    });
   } catch (err) {
     // Client errors are redaction-safe by contract; log message only, never
     // the error object (causes could embed URLs).
