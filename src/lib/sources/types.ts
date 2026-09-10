@@ -45,3 +45,15 @@ export interface FetchResult {
 export interface TransactionSource {
   fetchAccounts(opts: { startDate: Date }): Promise<FetchResult>;
 }
+
+/**
+ * LLM fallback for merchant categorization. Returns a map keyed by the exact
+ * merchant strings passed in; a missing key means "unresolved" and the caller
+ * leaves that merchant uncategorized to retry on a later run.
+ */
+export interface MerchantCategorizer {
+  categorize(
+    merchants: { merchant: string; examples: string[] }[],
+    categoryNames: string[],
+  ): Promise<Map<string, { category: string; confident: boolean }>>;
+}
