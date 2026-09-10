@@ -23,6 +23,7 @@ export function buildSystemPrompt(categoryNames: string[]): string {
     '"Income" is for payroll and deposits; "Going Out" (if listed) is for bars,',
     'clubs, concerts, and events, while restaurants stay "Dining";',
     '"Cash & ATM" (if listed) is for ATM withdrawals and cash;',
+    '"Savings & Investments" (if listed) is for brokerage transfers and investment contributions;',
     'use "Uncategorized" only when nothing fits.',
     'Set "confident": false whenever you are unsure — unsure answers go to a human',
     "review queue, so a wrong guess is worse than an unsure one.",

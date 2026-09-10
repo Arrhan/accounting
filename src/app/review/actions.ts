@@ -43,5 +43,6 @@ export async function categorizeTxn(formData: FormData): Promise<void> {
   }
 
   revalidatePath("/review");
-  revalidatePath("/");
+  revalidatePath("/transactions");
+  revalidatePath("/"); // dashboard metrics change
 }

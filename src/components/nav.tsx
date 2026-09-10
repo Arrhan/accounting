@@ -4,7 +4,11 @@ import { db } from "@/db";
 import { categories, transactions } from "@/db/schema";
 import { reviewQueueWhere } from "@/lib/categorize";
 
-export async function Nav({ active }: { active: "transactions" | "review" }) {
+export async function Nav({
+  active,
+}: {
+  active: "dashboard" | "transactions" | "review";
+}) {
   const [uncat] = await db
     .select()
     .from(categories)
@@ -21,7 +25,10 @@ export async function Nav({ active }: { active: "transactions" | "review" }) {
 
   return (
     <nav className="mb-6 flex gap-4 text-sm">
-      <Link href="/" className={linkClass(active === "transactions")}>
+      <Link href="/" className={linkClass(active === "dashboard")}>
+        Dashboard
+      </Link>
+      <Link href="/transactions" className={linkClass(active === "transactions")}>
         Transactions
       </Link>
       <Link href="/review" className={linkClass(active === "review")}>

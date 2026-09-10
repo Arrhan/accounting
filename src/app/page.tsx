@@ -1,17 +1,11 @@
-import { asc, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { accounts, categories, connections, transactions } from "@/db/schema";
+import { connections } from "@/db/schema";
 import { formatCents } from "@/lib/format";
-import { CategorySelect } from "@/components/category-select";
+import { computeMetrics, resolveRange } from "@/lib/metrics";
 import { Nav } from "@/components/nav";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { RankedBars } from "@/components/ranked-bars";
+import { StatTile } from "@/components/stat-tile";
+import { TimeRangeSelector } from "@/components/time-range-selector";
 
 export const dynamic = "force-dynamic";
 
@@ -33,34 +27,25 @@ function syncHealth(conns: Connection[]) {
   return { errored, newestSync, stale };
 }
 
-export default async function Home() {
-  const [conns, cats, rows] = await Promise.all([
-    db.select().from(connections),
-    db.select().from(categories).orderBy(asc(categories.name)),
-    db
-      .select({
-        id: transactions.id,
-        postedAt: transactions.postedAt,
-        accountName: accounts.name,
-        description: transactions.description,
-        payee: transactions.payee,
-        amountCents: transactions.amountCents,
-        currency: accounts.currency,
-        categoryId: transactions.categoryId,
-        isTransfer: transactions.isTransfer,
-      })
-      .from(transactions)
-      .innerJoin(accounts, eq(transactions.accountId, accounts.id))
-      .orderBy(desc(transactions.postedAt))
-      .limit(200),
-  ]);
+export default async function Dashboard({
+  searchParams,
+}: {
+  searchParams: Promise<{ range?: string; start?: string; end?: string }>;
+}) {
+  const { range, start, end } = await searchParams;
+  const resolved = resolveRange(range, new Date(), start, end);
 
+  const [conns, metrics] = await Promise.all([
+    db.select().from(connections),
+    computeMetrics(db, resolved),
+  ]);
   const { errored, newestSync, stale } = syncHealth(conns);
 
   return (
     <main className="mx-auto max-w-4xl p-8">
-      <Nav active="transactions" />
-      <h1 className="mb-6 text-xl font-semibold">Transactions</h1>
+      <Nav active="dashboard" />
+      <h1 className="mb-6 text-xl font-semibold">Dashboard</h1>
+
       {(errored.length > 0 || stale) && (
         <div className="border-destructive/50 bg-destructive/10 text-destructive mb-4 rounded-lg border p-3 text-sm">
           {errored.map((c) => (
@@ -79,55 +64,37 @@ export default async function Home() {
           )}
         </div>
       )}
-      {rows.length === 0 ? (
-        <p className="text-muted-foreground text-sm">
-          No transactions yet — run a sync.
-        </p>
-      ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Posted</TableHead>
-              <TableHead>Account</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead>Payee</TableHead>
-              <TableHead>Category</TableHead>
-              <TableHead className="text-right">Amount</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((row) => (
-              <TableRow key={row.id} className={row.isTransfer ? "opacity-60" : ""}>
-                <TableCell className="whitespace-nowrap">
-                  {row.postedAt.toISOString().slice(0, 10)}
-                </TableCell>
-                <TableCell>{row.accountName}</TableCell>
-                <TableCell>{row.description}</TableCell>
-                <TableCell>{row.payee ?? ""}</TableCell>
-                <TableCell>
-                  {row.isTransfer ? (
-                    <span
-                      className="text-muted-foreground text-xs"
-                      title="Inter-account transfer — excluded from spending totals"
-                    >
-                      ⇄ transfer
-                    </span>
-                  ) : (
-                    <CategorySelect
-                      txnId={row.id}
-                      categories={cats}
-                      currentCategoryId={row.categoryId}
-                    />
-                  )}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {formatCents(row.amountCents, row.currency)}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
+
+      <TimeRangeSelector active={resolved.preset} start={start} end={end} />
+
+      <div className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <StatTile
+          label="Net cash flow"
+          value={formatCents(metrics.netCashFlowCents)}
+          negative={metrics.netCashFlowCents < 0}
+        />
+        <StatTile label="Income" value={formatCents(metrics.incomeCents)} />
+        <StatTile label="Spend" value={formatCents(metrics.totalSpendCents)} />
+        <StatTile
+          label="Savings rate"
+          value={
+            metrics.savingsRate == null
+              ? "—"
+              : `${(metrics.savingsRate * 100).toFixed(1)}%`
+          }
+          negative={metrics.savingsRate != null && metrics.savingsRate < 0}
+        />
+      </div>
+
+      <section className="mb-8">
+        <h2 className="mb-2 text-sm font-medium">Spend by category</h2>
+        <RankedBars rows={metrics.spendByCategory} />
+      </section>
+
+      <section>
+        <h2 className="mb-2 text-sm font-medium">Spend by merchant</h2>
+        <RankedBars rows={metrics.spendByMerchant} />
+      </section>
     </main>
   );
 }
