@@ -2,8 +2,7 @@ import { asc, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { accounts, categories, connections, transactions } from "@/db/schema";
 import { formatCents } from "@/lib/format";
-import { categorizeTxn } from "@/app/review/actions";
-import { Button } from "@/components/ui/button";
+import { CategorySelect } from "@/components/category-select";
 import { Nav } from "@/components/nav";
 import {
   Table,
@@ -105,29 +104,11 @@ export default async function Home() {
                 <TableCell>{row.description}</TableCell>
                 <TableCell>{row.payee ?? ""}</TableCell>
                 <TableCell>
-                  {/* Saving counts as a manual fix: memorized for the merchant
-                      and applied retroactively, never overwritten by automation. */}
-                  <form action={categorizeTxn} className="flex items-center gap-1">
-                    <input type="hidden" name="txnId" value={row.id} />
-                    <select
-                      name="categoryId"
-                      required
-                      defaultValue={row.categoryId ?? ""}
-                      className="border-input bg-background focus-visible:border-ring focus-visible:ring-ring/50 h-7 rounded-lg border px-1.5 text-xs outline-none focus-visible:ring-3"
-                    >
-                      <option value="" disabled>
-                        —
-                      </option>
-                      {cats.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                    <Button type="submit" size="sm" variant="ghost">
-                      Save
-                    </Button>
-                  </form>
+                  <CategorySelect
+                    txnId={row.id}
+                    categories={cats}
+                    currentCategoryId={row.categoryId}
+                  />
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
                   {formatCents(row.amountCents, row.currency)}

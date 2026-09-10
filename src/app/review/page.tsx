@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { accounts, categories, transactions } from "@/db/schema";
 import { reviewQueueWhere } from "@/lib/categorize";
 import { formatCents } from "@/lib/format";
-import { Button } from "@/components/ui/button";
+import { CategorySelect } from "@/components/category-select";
 import { Nav } from "@/components/nav";
 import {
   Table,
@@ -13,7 +13,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { categorizeTxn } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -80,27 +79,11 @@ export default async function ReviewPage() {
                   {formatCents(row.amountCents, row.currency)}
                 </TableCell>
                 <TableCell>
-                  <form action={categorizeTxn} className="flex items-center gap-2">
-                    <input type="hidden" name="txnId" value={row.id} />
-                    <select
-                      name="categoryId"
-                      required
-                      defaultValue=""
-                      className="border-input bg-background focus-visible:border-ring focus-visible:ring-ring/50 h-8 rounded-lg border px-2 text-sm outline-none focus-visible:ring-3"
-                    >
-                      <option value="" disabled>
-                        Category…
-                      </option>
-                      {cats.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                    <Button type="submit" size="sm">
-                      Save
-                    </Button>
-                  </form>
+                  <CategorySelect
+                    txnId={row.id}
+                    categories={cats}
+                    currentCategoryId={null}
+                  />
                 </TableCell>
               </TableRow>
             ))}
