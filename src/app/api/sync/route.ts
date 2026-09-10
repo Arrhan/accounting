@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
+import {
+  categorizeTransactions,
+  type CategorizeResult,
+} from "@/lib/categorize";
+import { createClaudeCategorizer } from "@/lib/sources/llm";
 import { createSimpleFinSource } from "@/lib/sources/simplefin";
 import { runSync } from "@/lib/sync";
 
@@ -32,7 +37,25 @@ export async function GET(request: Request) {
       source: createSimpleFinSource(accessUrl),
       windowDays,
     });
-    return NextResponse.json(result);
+
+    // Categorize after sync; a categorization failure must not fail the sync.
+    let categorization: CategorizeResult | null = null;
+    let categorizeError: string | undefined;
+    try {
+      const claudeKey = process.env.CLAUDE_KEY;
+      categorization = await categorizeTransactions({
+        db,
+        categorizer: claudeKey ? createClaudeCategorizer(claudeKey) : null,
+      });
+    } catch (err) {
+      console.error(
+        "Categorization failed:",
+        err instanceof Error ? err.message : "unknown error",
+      );
+      categorizeError = "categorize_failed";
+    }
+
+    return NextResponse.json({ ...result, categorization, categorizeError });
   } catch (err) {
     // Client errors are redaction-safe by contract; log message only, never
     // the error object (causes could embed URLs).

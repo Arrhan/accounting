@@ -1,7 +1,8 @@
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { accounts, connections, transactions } from "@/db/schema";
+import { accounts, categories, connections, transactions } from "@/db/schema";
 import { formatCents } from "@/lib/format";
+import { Nav } from "@/components/nav";
 import {
   Table,
   TableBody,
@@ -43,9 +44,11 @@ export default async function Home() {
         payee: transactions.payee,
         amountCents: transactions.amountCents,
         currency: accounts.currency,
+        category: categories.name,
       })
       .from(transactions)
       .innerJoin(accounts, eq(transactions.accountId, accounts.id))
+      .leftJoin(categories, eq(transactions.categoryId, categories.id))
       .orderBy(desc(transactions.postedAt))
       .limit(200),
   ]);
@@ -54,6 +57,7 @@ export default async function Home() {
 
   return (
     <main className="mx-auto max-w-4xl p-8">
+      <Nav active="transactions" />
       <h1 className="mb-6 text-xl font-semibold">Transactions</h1>
       {(errored.length > 0 || stale) && (
         <div className="border-destructive/50 bg-destructive/10 text-destructive mb-4 rounded-lg border p-3 text-sm">
@@ -85,6 +89,7 @@ export default async function Home() {
               <TableHead>Account</TableHead>
               <TableHead>Description</TableHead>
               <TableHead>Payee</TableHead>
+              <TableHead>Category</TableHead>
               <TableHead className="text-right">Amount</TableHead>
             </TableRow>
           </TableHeader>
@@ -97,6 +102,9 @@ export default async function Home() {
                 <TableCell>{row.accountName}</TableCell>
                 <TableCell>{row.description}</TableCell>
                 <TableCell>{row.payee ?? ""}</TableCell>
+                <TableCell className="text-muted-foreground">
+                  {row.category ?? "—"}
+                </TableCell>
                 <TableCell className="text-right tabular-nums">
                   {formatCents(row.amountCents, row.currency)}
                 </TableCell>
