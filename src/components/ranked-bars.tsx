@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { formatCents } from "@/lib/format";
 
 export interface RankedRow {
@@ -6,6 +7,10 @@ export interface RankedRow {
   pct: number | null;
   barPct: number;
   count?: number;
+  /** When set, the label becomes a link (e.g. to drill into the row). */
+  href?: string;
+  /** Highlights the row as the currently selected one. */
+  active?: boolean;
 }
 
 export function RankedBars({
@@ -22,6 +27,9 @@ export function RankedBars({
     <div className="space-y-0.5">
       {rows.map((row) => {
         const negative = row.totalCents < 0;
+        const labelClass = `w-40 shrink-0 truncate text-sm ${
+          row.active ? "font-semibold" : ""
+        }`;
         return (
           <div
             key={row.name}
@@ -30,7 +38,13 @@ export function RankedBars({
               row.count != null ? ` · ${row.count} txns` : ""
             }`}
           >
-            <span className="w-40 shrink-0 truncate text-sm">{row.name}</span>
+            {row.href ? (
+              <Link href={row.href} className={`${labelClass} hover:underline`}>
+                {row.name}
+              </Link>
+            ) : (
+              <span className={labelClass}>{row.name}</span>
+            )}
             <div className="bg-muted relative h-6 flex-1 rounded-sm">
               <div
                 className={

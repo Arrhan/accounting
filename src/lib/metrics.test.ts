@@ -201,4 +201,33 @@ describe("computeMetrics", () => {
     expect(m.savingsByMerchant).toEqual([]);
     expect(m.savedCents).toBe(0);
   });
+
+  it("drills into one category's top merchants for the range", async () => {
+    await seedTxn({ accountId: creditId, amountCents: -5000, categoryId: cat["Dining"], normalizedMerchant: "CHIPOTLE" });
+    await seedTxn({ accountId: creditId, amountCents: -3000, categoryId: cat["Dining"], normalizedMerchant: "SWEETGREEN" });
+    await seedTxn({ accountId: creditId, amountCents: -2000, categoryId: cat["Shopping"], normalizedMerchant: "OLDNAVY" });
+    await seedTxn({ accountId: creditId, amountCents: -700, categoryId: null, normalizedMerchant: "MYSTERY" });
+    await seedTxn({ accountId: creditId, amountCents: -9999, categoryId: cat["Dining"], normalizedMerchant: "OLD", postedAt: "2026-07-01" }); // out of range
+
+    const dining = await computeMetrics(db, septMTD(), { category: "Dining" });
+    expect(dining.categoryDrilldown?.name).toBe("Dining");
+    expect(dining.categoryDrilldown?.totalCents).toBe(8000);
+    expect(dining.categoryDrilldown?.rows.map((r) => [r.name, r.totalCents, r.count])).toEqual([
+      ["CHIPOTLE", 5000, 1],
+      ["SWEETGREEN", 3000, 1],
+    ]);
+    // share is of the category total, not of overall spend
+    expect(dining.categoryDrilldown?.rows[0].pct).toBeCloseTo(62.5, 4);
+    // the rest of the dashboard is unaffected by the drilldown
+    expect(dining.totalSpendCents).toBe(10700);
+
+    const uncat = await computeMetrics(db, septMTD(), { category: "(uncategorized)" });
+    expect(uncat.categoryDrilldown?.totalCents).toBe(700);
+    expect(uncat.categoryDrilldown?.rows.map((r) => r.name)).toEqual(["MYSTERY"]);
+
+    const travel = await computeMetrics(db, septMTD(), { category: "Travel" });
+    expect(travel.categoryDrilldown).toEqual({ name: "Travel", totalCents: 0, rows: [] });
+
+    expect((await computeMetrics(db, septMTD())).categoryDrilldown).toBeNull();
+  });
 });

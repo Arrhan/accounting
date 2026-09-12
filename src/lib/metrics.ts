@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import { accounts, categories, transactions } from "@/db/schema";
 import type { SyncDb } from "@/lib/sync";
 
@@ -9,6 +9,11 @@ export interface DateRange {
   start: Date;
   end: Date;
 }
+
+/** Label used for spend whose transaction has no category assigned. */
+export const UNCATEGORIZED_LABEL = "(uncategorized)";
+/** Label used for spend whose transaction has no normalized merchant. */
+export const UNKNOWN_MERCHANT_LABEL = "(unknown)";
 
 export interface CategorySpend {
   name: string;
@@ -21,6 +26,13 @@ export interface CategorySpend {
 
 export interface MerchantSpend extends CategorySpend {
   count: number;
+}
+
+export interface CategoryDrilldown {
+  name: string;
+  totalCents: number;
+  /** Top merchants within the category; % is the share of the category total. */
+  rows: MerchantSpend[];
 }
 
 export interface Metrics {
@@ -36,6 +48,8 @@ export interface Metrics {
   spendByMerchant: MerchantSpend[];
   incomeBySource: MerchantSpend[];
   savingsByMerchant: MerchantSpend[];
+  /** Present only when a category was requested. */
+  categoryDrilldown: CategoryDrilldown | null;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -134,6 +148,7 @@ function withPct<T extends { totalCents: number }>(
 export async function computeMetrics(
   db: SyncDb,
   range: DateRange,
+  opts: { category?: string } = {},
 ): Promise<Metrics> {
   const inRange = and(
     gte(transactions.postedAt, range.start),
@@ -145,7 +160,7 @@ export async function computeMetrics(
   const inflowSum = sql<number>`sum(${transactions.amountCents})::bigint`.mapWith(
     Number,
   );
-  const merchantLabel = sql<string>`coalesce(${transactions.normalizedMerchant}, '(unknown)')`;
+  const merchantLabel = sql<string>`coalesce(${transactions.normalizedMerchant}, ${UNKNOWN_MERCHANT_LABEL})`;
   const rowCount = sql<number>`count(*)::int`.mapWith(Number);
 
   const base = () =>
@@ -155,11 +170,21 @@ export async function computeMetrics(
       .innerJoin(accounts, eq(transactions.accountId, accounts.id))
       .leftJoin(categories, eq(transactions.categoryId, categories.id));
 
-  const [categoryRows, merchantRows, incomeRows, savingsRows, [totals]] =
+  // Drill into one category's merchants. The synthetic "(uncategorized)"
+  // label maps back to transactions with no category at all.
+  const category = opts.category;
+  const categoryFilter =
+    category === undefined
+      ? null
+      : category === UNCATEGORIZED_LABEL
+        ? isNull(categories.name)
+        : eq(categories.name, category);
+
+  const [categoryRows, merchantRows, incomeRows, savingsRows, drillRows, [totals]] =
     await Promise.all([
       db
         .select({
-          name: sql<string>`coalesce(${categories.name}, '(uncategorized)')`,
+          name: sql<string>`coalesce(${categories.name}, ${UNCATEGORIZED_LABEL})`,
           totalCents: outflowSum,
         })
         .from(transactions)
@@ -186,6 +211,13 @@ export async function computeMetrics(
         .where(and(inRange, savingsContributes))
         .groupBy(transactions.normalizedMerchant)
         .orderBy(desc(outflowSum)),
+      categoryFilter
+        ? base()
+            .where(and(inRange, spendContributes, categoryFilter))
+            .groupBy(transactions.normalizedMerchant)
+            .orderBy(desc(outflowSum))
+            .limit(15)
+        : Promise.resolve([]),
       db
         .select({
           spend: sql<number>`coalesce(sum(case when ${spendContributes}
@@ -206,6 +238,19 @@ export async function computeMetrics(
   const savedCents = totals.saved;
   const netCashFlowCents = incomeCents - totalSpendCents;
 
+  let categoryDrilldown: CategoryDrilldown | null = null;
+  if (category !== undefined) {
+    // The category list already holds every category's total for this range,
+    // so the drilldown's denominator reconciles with the bar it was opened from.
+    const categoryTotal =
+      categoryRows.find((r) => r.name === category)?.totalCents ?? 0;
+    categoryDrilldown = {
+      name: category,
+      totalCents: categoryTotal,
+      rows: withPct(drillRows, categoryTotal),
+    };
+  }
+
   return {
     range,
     incomeCents,
@@ -217,5 +262,6 @@ export async function computeMetrics(
     spendByMerchant: withPct(merchantRows, totalSpendCents),
     incomeBySource: withPct(incomeRows, incomeCents),
     savingsByMerchant: withPct(savingsRows, savedCents),
+    categoryDrilldown,
   };
 }

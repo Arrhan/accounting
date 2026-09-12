@@ -12,18 +12,24 @@ export function TimeRangeSelector({
   active,
   start,
   end,
+  category,
 }: {
   active: RangePreset;
   start?: string;
   end?: string;
+  /** Preserved across range changes so a category drilldown stays open. */
+  category?: string;
 }) {
+  const categoryQs = category
+    ? `&category=${encodeURIComponent(category)}`
+    : "";
   return (
     <div className="mb-6 flex flex-wrap items-center gap-4">
       <div className="flex gap-3 text-sm">
         {PRESETS.map((p) => (
           <Link
             key={p.key}
-            href={`/?range=${p.key}`}
+            href={`/?range=${p.key}${categoryQs}`}
             className={
               active === p.key
                 ? "font-semibold"
@@ -36,6 +42,7 @@ export function TimeRangeSelector({
       </div>
       <form method="get" action="/" className="flex items-center gap-2">
         <input type="hidden" name="range" value="custom" />
+        {category && <input type="hidden" name="category" value={category} />}
         <input
           type="date"
           name="start"

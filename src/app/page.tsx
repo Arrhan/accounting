@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { db } from "@/db";
 import { connections } from "@/db/schema";
 import { formatCents } from "@/lib/format";
@@ -27,19 +28,49 @@ function syncHealth(conns: Connection[]) {
   return { errored, newestSync, stale };
 }
 
+type DashboardParams = {
+  range?: string;
+  start?: string;
+  end?: string;
+  category?: string;
+};
+
+/** Build a dashboard URL that keeps the current range and toggles the category. */
+function dashboardHref(params: DashboardParams): string {
+  const p = new URLSearchParams();
+  if (params.range) p.set("range", params.range);
+  if (params.start) p.set("start", params.start);
+  if (params.end) p.set("end", params.end);
+  if (params.category) p.set("category", params.category);
+  const qs = p.toString();
+  return qs ? `/?${qs}` : "/";
+}
+
 export default async function Dashboard({
   searchParams,
 }: {
-  searchParams: Promise<{ range?: string; start?: string; end?: string }>;
+  searchParams: Promise<DashboardParams>;
 }) {
-  const { range, start, end } = await searchParams;
+  const { range, start, end, category } = await searchParams;
   const resolved = resolveRange(range, new Date(), start, end);
 
   const [conns, metrics] = await Promise.all([
     db.select().from(connections),
-    computeMetrics(db, resolved),
+    computeMetrics(db, resolved, { category }),
   ]);
   const { errored, newestSync, stale } = syncHealth(conns);
+
+  // Each category label links to its own drilldown; the open one links back out.
+  const categoryRows = metrics.spendByCategory.map((row) => ({
+    ...row,
+    active: row.name === category,
+    href: dashboardHref({
+      range,
+      start,
+      end,
+      category: row.name === category ? undefined : row.name,
+    }),
+  }));
 
   return (
     <main className="mx-auto max-w-4xl p-8">
@@ -65,7 +96,12 @@ export default async function Dashboard({
         </div>
       )}
 
-      <TimeRangeSelector active={resolved.preset} start={start} end={end} />
+      <TimeRangeSelector
+        active={resolved.preset}
+        start={start}
+        end={end}
+        category={category}
+      />
 
       <div className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-5">
         <StatTile
@@ -91,9 +127,39 @@ export default async function Dashboard({
       </div>
 
       <section className="mb-8">
-        <h2 className="mb-2 text-sm font-medium">Spend by category</h2>
-        <RankedBars rows={metrics.spendByCategory} />
+        <div className="mb-2 flex items-baseline justify-between">
+          <h2 className="text-sm font-medium">Spend by category</h2>
+          {!metrics.categoryDrilldown && (
+            <span className="text-muted-foreground text-xs">
+              Click a category to see its top merchants
+            </span>
+          )}
+        </div>
+        <RankedBars rows={categoryRows} />
       </section>
+
+      {metrics.categoryDrilldown && (
+        <section className="mb-8">
+          <div className="mb-2 flex items-baseline justify-between">
+            <h2 className="text-sm font-medium">
+              Top merchants in {metrics.categoryDrilldown.name}
+              <span className="text-muted-foreground ml-2 font-normal tabular-nums">
+                {formatCents(metrics.categoryDrilldown.totalCents)}
+              </span>
+            </h2>
+            <Link
+              href={dashboardHref({ range, start, end })}
+              className="text-muted-foreground hover:text-foreground text-xs"
+            >
+              Clear ×
+            </Link>
+          </div>
+          <RankedBars
+            rows={metrics.categoryDrilldown.rows}
+            emptyMessage="No spending in this category for this range."
+          />
+        </section>
+      )}
 
       <section className="mb-8">
         <h2 className="mb-2 text-sm font-medium">Spend by merchant</h2>
