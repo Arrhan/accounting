@@ -8,11 +8,15 @@ export interface RankedRow {
   count?: number;
 }
 
-export function RankedBars({ rows }: { rows: RankedRow[] }) {
+export function RankedBars({
+  rows,
+  emptyMessage = "No spending in this range.",
+}: {
+  rows: RankedRow[];
+  emptyMessage?: string;
+}) {
   if (rows.length === 0) {
-    return (
-      <p className="text-muted-foreground text-sm">No spending in this range.</p>
-    );
+    return <p className="text-muted-foreground text-sm">{emptyMessage}</p>;
   }
   return (
     <div className="space-y-0.5">

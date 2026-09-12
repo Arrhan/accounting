@@ -157,6 +157,23 @@ describe("computeMetrics", () => {
     expect(chipotle?.totalCents).toBe(5000);
     expect(chipotle?.count).toBe(1);
     expect(chipotle?.pct).toBeCloseTo((5000 / 6300) * 100, 4);
+
+    // savings & investments: 100000 out − 50000 withdrawn back = 50000 net
+    expect(m.savedCents).toBe(50000);
+    const ibkr = m.savingsByMerchant.find((r) => r.name === "IBKR");
+    expect(ibkr?.totalCents).toBe(50000);
+    expect(ibkr?.count).toBe(2);
+    expect(ibkr?.pct).toBeCloseTo(100, 4);
+    expect(m.savingsByMerchant.reduce((t, r) => t + r.totalCents, 0)).toBe(m.savedCents);
+
+    // income sources: payroll + P2P in, % against total income
+    const bySource = Object.fromEntries(m.incomeBySource.map((r) => [r.name, r]));
+    expect(bySource["MICROSOFT"].totalCents).toBe(400000);
+    expect(bySource["MICROSOFT"].count).toBe(1);
+    expect(bySource["MICROSOFT"].pct).toBeCloseTo((400000 / 403000) * 100, 4);
+    expect(bySource["AADIT"].totalCents).toBe(3000);
+    expect(bySource["IBKR"]).toBeUndefined(); // savings withdrawal is not income
+    expect(m.incomeBySource.reduce((t, r) => t + r.totalCents, 0)).toBe(m.incomeCents);
   });
 
   it("returns savingsRate null when there is no income", async () => {
@@ -180,5 +197,8 @@ describe("computeMetrics", () => {
     expect(m.spendByCategory).toEqual([]);
     expect(m.spendByMerchant).toEqual([]);
     expect(m.totalSpendCents).toBe(0);
+    expect(m.incomeBySource).toEqual([]);
+    expect(m.savingsByMerchant).toEqual([]);
+    expect(m.savedCents).toBe(0);
   });
 });

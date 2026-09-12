@@ -13,7 +13,7 @@ export interface DateRange {
 export interface CategorySpend {
   name: string;
   totalCents: number;
-  /** % of total spend; null when total spend is ≤ 0. */
+  /** % of the list's denominator; null when that denominator is ≤ 0. */
   pct: number | null;
   /** Bar width 0–100, scaled to the largest magnitude in the list. */
   barPct: number;
@@ -30,8 +30,12 @@ export interface Metrics {
   netCashFlowCents: number;
   /** net / income; null when income ≤ 0. */
   savingsRate: number | null;
+  /** Net moved into Savings & Investments: contributions positive, withdrawals negative. */
+  savedCents: number;
   spendByCategory: CategorySpend[];
   spendByMerchant: MerchantSpend[];
+  incomeBySource: MerchantSpend[];
+  savingsByMerchant: MerchantSpend[];
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -85,22 +89,44 @@ export function resolveRange(
   return { preset: "month-to-date", start: new Date(Date.UTC(y, m, 1)), end: now };
 }
 
-// A transaction contributes to spend unless it is a matched transfer, an
-// income/savings category, or a checking inflow (income). See docs/ARCHITECTURE.md.
-const spendContributes = sql`
+// Predicate fragments — the single source of truth for what counts as what.
+// See docs/ARCHITECTURE.md decision log ("Metric definitions").
+
+// Spend: not a matched transfer, not an income/savings category, and not a
+// checking inflow (that's income). Contribution = -amount, so refunds on a
+// card reduce their category.
+const spendContributes = sql`(
   ${transactions.isTransfer} = false
   AND (${categories.name} IS NULL OR ${categories.name} NOT IN ('Income', 'Savings & Investments'))
   AND NOT (${transactions.amountCents} > 0 AND ${accounts.type} = 'checking')
-`;
+)`;
+
+// Income: money arriving in checking that isn't a transfer or a withdrawal
+// back from savings/investments. Category is deliberately ignored so
+// mislabeled payroll still counts.
+const incomeContributes = sql`(
+  ${transactions.isTransfer} = false
+  AND ${transactions.amountCents} > 0
+  AND ${accounts.type} = 'checking'
+  AND (${categories.name} IS NULL OR ${categories.name} <> 'Savings & Investments')
+)`;
+
+// Savings & Investments: anything in that category that isn't a matched
+// transfer. Contribution = -amount, so contributions are positive and
+// withdrawals back to checking are negative.
+const savingsContributes = sql`(
+  ${transactions.isTransfer} = false
+  AND ${categories.name} = 'Savings & Investments'
+)`;
 
 function withPct<T extends { totalCents: number }>(
   rows: T[],
-  totalSpendCents: number,
+  denominatorCents: number,
 ): (T & { pct: number | null; barPct: number })[] {
   const maxAbs = rows.reduce((m, r) => Math.max(m, Math.abs(r.totalCents)), 0);
   return rows.map((r) => ({
     ...r,
-    pct: totalSpendCents > 0 ? (r.totalCents / totalSpendCents) * 100 : null,
+    pct: denominatorCents > 0 ? (r.totalCents / denominatorCents) * 100 : null,
     barPct: maxAbs > 0 ? Math.round((Math.abs(r.totalCents) / maxAbs) * 100) : 0,
   }));
 }
@@ -113,55 +139,71 @@ export async function computeMetrics(
     gte(transactions.postedAt, range.start),
     lte(transactions.postedAt, range.end),
   );
-  const spendSum = sql<number>`sum(-${transactions.amountCents})::bigint`.mapWith(
+  const outflowSum = sql<number>`sum(-${transactions.amountCents})::bigint`.mapWith(
     Number,
   );
+  const inflowSum = sql<number>`sum(${transactions.amountCents})::bigint`.mapWith(
+    Number,
+  );
+  const merchantLabel = sql<string>`coalesce(${transactions.normalizedMerchant}, '(unknown)')`;
+  const rowCount = sql<number>`count(*)::int`.mapWith(Number);
 
-  const [categoryRows, merchantRows, [totals]] = await Promise.all([
+  const base = () =>
     db
-      .select({
-        name: sql<string>`coalesce(${categories.name}, '(uncategorized)')`,
-        totalCents: spendSum,
-      })
+      .select({ name: merchantLabel, totalCents: outflowSum, count: rowCount })
       .from(transactions)
       .innerJoin(accounts, eq(transactions.accountId, accounts.id))
-      .leftJoin(categories, eq(transactions.categoryId, categories.id))
-      .where(and(inRange, spendContributes))
-      .groupBy(categories.name)
-      .orderBy(desc(spendSum)),
-    db
-      .select({
-        name: sql<string>`coalesce(${transactions.normalizedMerchant}, '(unknown)')`,
-        totalCents: spendSum,
-        count: sql<number>`count(*)::int`.mapWith(Number),
-      })
-      .from(transactions)
-      .innerJoin(accounts, eq(transactions.accountId, accounts.id))
-      .leftJoin(categories, eq(transactions.categoryId, categories.id))
-      .where(and(inRange, spendContributes))
-      .groupBy(transactions.normalizedMerchant)
-      .orderBy(desc(spendSum))
-      .limit(15),
-    db
-      .select({
-        spend: sql<number>`coalesce(sum(case when
-          ${transactions.isTransfer} = false
-          AND (${categories.name} IS NULL OR ${categories.name} NOT IN ('Income', 'Savings & Investments'))
-          AND NOT (${transactions.amountCents} > 0 AND ${accounts.type} = 'checking')
-          then -${transactions.amountCents} else 0 end), 0)::bigint`.mapWith(Number),
-        income: sql<number>`coalesce(sum(case when
-          ${transactions.amountCents} > 0 AND ${accounts.type} = 'checking'
-          AND (${categories.name} IS NULL OR ${categories.name} <> 'Savings & Investments')
-          then ${transactions.amountCents} else 0 end), 0)::bigint`.mapWith(Number),
-      })
-      .from(transactions)
-      .innerJoin(accounts, eq(transactions.accountId, accounts.id))
-      .leftJoin(categories, eq(transactions.categoryId, categories.id))
-      .where(and(inRange, eq(transactions.isTransfer, false))),
-  ]);
+      .leftJoin(categories, eq(transactions.categoryId, categories.id));
+
+  const [categoryRows, merchantRows, incomeRows, savingsRows, [totals]] =
+    await Promise.all([
+      db
+        .select({
+          name: sql<string>`coalesce(${categories.name}, '(uncategorized)')`,
+          totalCents: outflowSum,
+        })
+        .from(transactions)
+        .innerJoin(accounts, eq(transactions.accountId, accounts.id))
+        .leftJoin(categories, eq(transactions.categoryId, categories.id))
+        .where(and(inRange, spendContributes))
+        .groupBy(categories.name)
+        .orderBy(desc(outflowSum)),
+      base()
+        .where(and(inRange, spendContributes))
+        .groupBy(transactions.normalizedMerchant)
+        .orderBy(desc(outflowSum))
+        .limit(15),
+      db
+        .select({ name: merchantLabel, totalCents: inflowSum, count: rowCount })
+        .from(transactions)
+        .innerJoin(accounts, eq(transactions.accountId, accounts.id))
+        .leftJoin(categories, eq(transactions.categoryId, categories.id))
+        .where(and(inRange, incomeContributes))
+        .groupBy(transactions.normalizedMerchant)
+        .orderBy(desc(inflowSum))
+        .limit(15),
+      base()
+        .where(and(inRange, savingsContributes))
+        .groupBy(transactions.normalizedMerchant)
+        .orderBy(desc(outflowSum)),
+      db
+        .select({
+          spend: sql<number>`coalesce(sum(case when ${spendContributes}
+            then -${transactions.amountCents} else 0 end), 0)::bigint`.mapWith(Number),
+          income: sql<number>`coalesce(sum(case when ${incomeContributes}
+            then ${transactions.amountCents} else 0 end), 0)::bigint`.mapWith(Number),
+          saved: sql<number>`coalesce(sum(case when ${savingsContributes}
+            then -${transactions.amountCents} else 0 end), 0)::bigint`.mapWith(Number),
+        })
+        .from(transactions)
+        .innerJoin(accounts, eq(transactions.accountId, accounts.id))
+        .leftJoin(categories, eq(transactions.categoryId, categories.id))
+        .where(and(inRange, eq(transactions.isTransfer, false))),
+    ]);
 
   const totalSpendCents = totals.spend;
   const incomeCents = totals.income;
+  const savedCents = totals.saved;
   const netCashFlowCents = incomeCents - totalSpendCents;
 
   return {
@@ -170,7 +212,10 @@ export async function computeMetrics(
     totalSpendCents,
     netCashFlowCents,
     savingsRate: incomeCents > 0 ? netCashFlowCents / incomeCents : null,
+    savedCents,
     spendByCategory: withPct(categoryRows, totalSpendCents),
     spendByMerchant: withPct(merchantRows, totalSpendCents),
+    incomeBySource: withPct(incomeRows, incomeCents),
+    savingsByMerchant: withPct(savingsRows, savedCents),
   };
 }

@@ -67,7 +67,7 @@ export default async function Dashboard({
 
       <TimeRangeSelector active={resolved.preset} start={start} end={end} />
 
-      <div className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-5">
         <StatTile
           label="Net cash flow"
           value={formatCents(metrics.netCashFlowCents)}
@@ -84,6 +84,10 @@ export default async function Dashboard({
           }
           negative={metrics.savingsRate != null && metrics.savingsRate < 0}
         />
+        <StatTile
+          label="Saved & invested"
+          value={formatCents(metrics.savedCents)}
+        />
       </div>
 
       <section className="mb-8">
@@ -91,9 +95,25 @@ export default async function Dashboard({
         <RankedBars rows={metrics.spendByCategory} />
       </section>
 
-      <section>
+      <section className="mb-8">
         <h2 className="mb-2 text-sm font-medium">Spend by merchant</h2>
         <RankedBars rows={metrics.spendByMerchant} />
+      </section>
+
+      <section className="mb-8">
+        <h2 className="mb-2 text-sm font-medium">Income sources</h2>
+        <RankedBars
+          rows={metrics.incomeBySource}
+          emptyMessage="No income in this range."
+        />
+      </section>
+
+      <section>
+        <h2 className="mb-2 text-sm font-medium">Savings &amp; investments</h2>
+        <RankedBars
+          rows={metrics.savingsByMerchant}
+          emptyMessage="Nothing moved to savings or investments in this range."
+        />
       </section>
     </main>
   );
