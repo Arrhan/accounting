@@ -73,7 +73,7 @@ export default async function Dashboard({
   }));
 
   return (
-    <main className="mx-auto max-w-4xl p-8">
+    <main className="mx-auto w-full max-w-[1600px] p-8">
       <Nav active="dashboard" />
       <h1 className="mb-6 text-xl font-semibold">Dashboard</h1>
 

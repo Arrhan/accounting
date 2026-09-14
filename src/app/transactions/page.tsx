@@ -37,7 +37,7 @@ export default async function TransactionsPage() {
   ]);
 
   return (
-    <main className="mx-auto max-w-4xl p-8">
+    <main className="mx-auto w-full max-w-[1600px] p-8">
       <Nav active="transactions" />
       <h1 className="mb-6 text-xl font-semibold">Transactions</h1>
       {rows.length === 0 ? (
@@ -65,9 +65,9 @@ export default async function TransactionsPage() {
                 <TableCell className="whitespace-nowrap">
                   {row.postedAt.toISOString().slice(0, 10)}
                 </TableCell>
-                <TableCell>{row.accountName}</TableCell>
-                <TableCell>{row.description}</TableCell>
-                <TableCell>{row.payee ?? ""}</TableCell>
+                <TableCell className="whitespace-normal">{row.accountName}</TableCell>
+                <TableCell className="whitespace-normal break-words">{row.description}</TableCell>
+                <TableCell className="whitespace-normal">{row.payee ?? ""}</TableCell>
                 <TableCell>
                   {row.isTransfer ? (
                     <span

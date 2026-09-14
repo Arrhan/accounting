@@ -47,7 +47,7 @@ export default async function ReviewPage() {
   ]);
 
   return (
-    <main className="mx-auto max-w-4xl p-8">
+    <main className="mx-auto w-full max-w-[1600px] p-8">
       <Nav active="review" />
       <h1 className="mb-6 text-xl font-semibold">Review queue</h1>
       {rows.length === 0 ? (
@@ -72,7 +72,7 @@ export default async function ReviewPage() {
                   {row.postedAt.toISOString().slice(0, 10)}
                 </TableCell>
                 <TableCell>{row.normalizedMerchant ?? "—"}</TableCell>
-                <TableCell className="text-muted-foreground">
+                <TableCell className="text-muted-foreground whitespace-normal break-words">
                   {row.description}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
