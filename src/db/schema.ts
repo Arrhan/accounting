@@ -20,7 +20,7 @@ export const connections = pgTable("connections", {
   status: text("status", { enum: ["ok", "error"] }).notNull().default("ok"),
   lastError: text("last_error"),
   lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
-});
+}).enableRLS();
 
 export const accounts = pgTable(
   "accounts",
@@ -41,7 +41,7 @@ export const accounts = pgTable(
       t.simplefinAccountId,
     ),
   ],
-);
+).enableRLS();
 
 export const balanceSnapshots = pgTable(
   "balance_snapshots",
@@ -54,13 +54,13 @@ export const balanceSnapshots = pgTable(
     balanceCents: integer("balance_cents").notNull(),
   },
   (t) => [primaryKey({ columns: [t.accountId, t.date] })],
-);
+).enableRLS();
 
 export const categories = pgTable("categories", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   name: text("name").notNull().unique(),
   isSpend: boolean("is_spend").notNull().default(true),
-});
+}).enableRLS();
 
 export const transactions = pgTable(
   "transactions",
@@ -101,7 +101,7 @@ export const transactions = pgTable(
       t.simplefinTxnId,
     ),
   ],
-);
+).enableRLS();
 
 export const rules = pgTable("rules", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -110,11 +110,11 @@ export const rules = pgTable("rules", {
     .notNull()
     .references(() => categories.id),
   priority: integer("priority").notNull().default(100),
-});
+}).enableRLS();
 
 export const merchantMemory = pgTable("merchant_memory", {
   normalizedMerchant: text("normalized_merchant").primaryKey(),
   categoryId: integer("category_id")
     .notNull()
     .references(() => categories.id),
-});
+}).enableRLS();
